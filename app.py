@@ -90,6 +90,7 @@ CUSTOM_CSS = """
         box-shadow: 0 12px 28px rgba(34, 50, 75, 0.05);
         margin-bottom: 18px;
     }
+    .section-spacer { margin-top: 20px; }
     .risk-score {
         border-radius: 8px;
         padding: 22px;
@@ -108,12 +109,14 @@ CUSTOM_CSS = """
         margin-bottom: 9px;
         color: #26364a;
         font-size: 14px;
+        min-height: 64px;
+        display: flex;
+        align-items: center;
     }
     .score-guide {
         display: grid;
         grid-template-columns: repeat(3, minmax(0, 1fr));
         gap: 12px;
-        margin-bottom: 18px;
     }
     .guide-item {
         border: 1px solid var(--border);
@@ -142,12 +145,19 @@ CUSTOM_CSS = """
     .footer-disclaimer {
         color: #526276;
         font-size: 13px;
-        padding: 8px 2px 20px;
+        padding: 18px 2px 22px;
+        margin-top: 4px;
     }
     div[data-testid="stDataFrame"] {
         border: 1px solid var(--border);
         border-radius: 8px;
         overflow: hidden;
+    }
+    [data-testid="stSidebar"] .stMultiSelect label {
+        font-weight: 700;
+    }
+    [data-testid="stSidebar"] .stCaption {
+        color: #a9bacd !important;
     }
 </style>
 """
@@ -187,13 +197,17 @@ scored = prepare_scores(readings)
 
 st.sidebar.title("MeterMind")
 st.sidebar.caption("Behavioral fingerprinting filters")
-areas = st.sidebar.multiselect("Area", sorted(scored["area"].unique()), default=sorted(scored["area"].unique()))
+st.sidebar.caption("Leave blank to include all.")
+area_options = sorted(scored["area"].unique())
+consumer_type_options = sorted(scored["consumer_type"].unique())
+risk_level_options = ["High", "Medium", "Low"]
+areas = st.sidebar.multiselect("Area", area_options, default=[])
 consumer_types = st.sidebar.multiselect(
-    "Consumer type",
-    sorted(scored["consumer_type"].unique()),
-    default=sorted(scored["consumer_type"].unique()),
+    "Consumer Type",
+    consumer_type_options,
+    default=[],
 )
-risk_levels = st.sidebar.multiselect("Risk level", ["High", "Medium", "Low"], default=["High", "Medium", "Low"])
+risk_levels = st.sidebar.multiselect("Risk Level", risk_level_options, default=[])
 st.sidebar.markdown(
     """
     <div class="sidebar-disclaimer">
@@ -204,9 +218,9 @@ st.sidebar.markdown(
 )
 
 filtered = scored[
-    scored["area"].isin(areas)
-    & scored["consumer_type"].isin(consumer_types)
-    & scored["risk_level"].isin(risk_levels)
+    scored["area"].isin(areas or area_options)
+    & scored["consumer_type"].isin(consumer_types or consumer_type_options)
+    & scored["risk_level"].isin(risk_levels or risk_level_options)
 ].copy()
 
 st.markdown(
@@ -263,7 +277,6 @@ st.markdown(
 
 chart_left, chart_right = st.columns([1.05, 1])
 with chart_left:
-    st.markdown('<div class="section-panel">', unsafe_allow_html=True)
     st.subheader("Risk Distribution")
     risk_counts = filtered["risk_level"].value_counts().reindex(["High", "Medium", "Low"]).fillna(0).reset_index()
     risk_counts.columns = ["risk_level", "meters"]
@@ -278,10 +291,8 @@ with chart_left:
     fig.update_layout(showlegend=False, height=330, margin=dict(l=10, r=10, t=10, b=10), plot_bgcolor="white")
     fig.update_traces(textposition="outside", marker_line_width=0)
     st.plotly_chart(fig, width="stretch")
-    st.markdown("</div>", unsafe_allow_html=True)
 
 with chart_right:
-    st.markdown('<div class="section-panel">', unsafe_allow_html=True)
     st.subheader("Area-Wise High-Risk Meters")
     area_high = (
         filtered[filtered["risk_level"] == "High"]
@@ -293,9 +304,8 @@ with chart_right:
     fig = px.bar(area_high, x="high_risk_meters", y="area", orientation="h", color_discrete_sequence=["#1f7a8c"])
     fig.update_layout(height=330, margin=dict(l=10, r=10, t=10, b=10), plot_bgcolor="white", yaxis_title="")
     st.plotly_chart(fig, width="stretch")
-    st.markdown("</div>", unsafe_allow_html=True)
 
-st.markdown('<div class="section-panel">', unsafe_allow_html=True)
+st.markdown('<div class="section-spacer"></div>', unsafe_allow_html=True)
 st.subheader("Top 10 Suspicious Meters")
 ranking = filtered[
     [
@@ -303,13 +313,11 @@ ranking = filtered[
         "risk_score",
         "risk_level",
         "consumer_type",
-        "area",
         "feeder_id",
+        "sanctioned_load_kw",
         "percentage_consumption_drop",
         "zero_consumption_days",
         "peer_underconsumption_pct",
-        "voltage_anomaly_count",
-        "power_factor_anomaly_count",
     ]
 ].head(10).rename(
     columns={
@@ -317,35 +325,34 @@ ranking = filtered[
         "risk_score": "Risk Score",
         "risk_level": "Risk Level",
         "consumer_type": "Consumer Type",
-        "area": "Area",
         "feeder_id": "Feeder ID",
-        "percentage_consumption_drop": "Consumption Drop %",
-        "zero_consumption_days": "Zero Consumption Days",
-        "peer_underconsumption_pct": "Peer Underconsumption %",
-        "voltage_anomaly_count": "Voltage Anomalies",
-        "power_factor_anomaly_count": "Power Factor Anomalies",
+        "sanctioned_load_kw": "Load kW",
+        "percentage_consumption_drop": "Drop %",
+        "zero_consumption_days": "Zero Days",
+        "peer_underconsumption_pct": "Peer Gap %",
     }
 )
 st.dataframe(
     ranking,
     width="stretch",
+    height=390,
     hide_index=True,
     column_config={
         "Risk Score": st.column_config.ProgressColumn("Risk Score", min_value=0, max_value=100, format="%.1f"),
-        "Consumption Drop %": st.column_config.NumberColumn("Consumption Drop %", format="%.1f"),
-        "Peer Underconsumption %": st.column_config.NumberColumn("Peer Underconsumption %", format="%.1f"),
+        "Load kW": st.column_config.NumberColumn("Load kW", format="%.1f"),
+        "Drop %": st.column_config.NumberColumn("Drop %", format="%.1f"),
+        "Peer Gap %": st.column_config.NumberColumn("Peer Gap %", format="%.1f"),
+        "Zero Days": st.column_config.NumberColumn("Zero Days", format="%d"),
     },
 )
-st.markdown("</div>", unsafe_allow_html=True)
 
-st.markdown('<div class="section-panel">', unsafe_allow_html=True)
+st.markdown('<div class="section-spacer"></div>', unsafe_allow_html=True)
 st.subheader("Investigation Panel")
-default_meter = filtered.iloc[0]["meter_id"] if not filtered.empty else scored.iloc[0]["meter_id"]
 selected_meter = st.selectbox("Select meter", filtered["meter_id"].tolist() or scored["meter_id"].tolist(), index=0)
 meter_row = scored[scored["meter_id"] == selected_meter].iloc[0]
 meter_readings = readings[readings["meter_id"] == selected_meter].sort_values("date")
 
-profile_cols = st.columns([0.78, 1.35, 1.1])
+profile_cols = st.columns([0.82, 1.42, 1.15], gap="large")
 with profile_cols[0]:
     st.markdown('<div class="panel-kicker">Behavioral Fingerprint</div>', unsafe_allow_html=True)
     st.markdown(
@@ -359,7 +366,6 @@ with profile_cols[0]:
         """,
         unsafe_allow_html=True,
     )
-    st.write("")
     st.metric("Sanctioned load", f"{meter_row['sanctioned_load_kw']:.1f} kW")
     st.metric("Recent 7-day avg", f"{meter_row['recent_7_day_avg']:.1f} units")
     st.metric("Previous 30-day avg", f"{meter_row['previous_30_day_avg']:.1f} units")
@@ -376,7 +382,7 @@ with profile_cols[2]:
     for explanation in meter_row["explanations"]:
         st.markdown(f'<div class="flag">{explanation}</div>', unsafe_allow_html=True)
 
-compare_cols = st.columns(2)
+compare_cols = st.columns(2, gap="large")
 with compare_cols[0]:
     st.markdown('<div class="panel-kicker">Baseline vs Recent</div>', unsafe_allow_html=True)
     comparison = pd.DataFrame(
@@ -408,12 +414,11 @@ with compare_cols[1]:
     )
     fig.update_layout(height=300, margin=dict(l=10, r=10, t=20, b=10), plot_bgcolor="white", yaxis_title="Mean daily units")
     st.plotly_chart(fig, width="stretch")
-st.markdown("</div>", unsafe_allow_html=True)
 
 st.markdown(
     """
     <div class="footer-disclaimer">
-        Prototype uses synthetic data. Risk score indicates inspection priority, not proof of tampering.
+        Prototype uses synthetic data. Risk scores indicate inspection priority, not proof of tampering.
     </div>
     """,
     unsafe_allow_html=True,
